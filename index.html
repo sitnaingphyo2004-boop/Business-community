@@ -324,6 +324,11 @@ h1.hero-title .grad{background:linear-gradient(100deg,#a78bfa 10%,#f97316 55%,#f
       <p>Applications are reviewed within 24 hours.</p>
     </div>
     <div class="card form-card" id="form-card">
+      <div class="field" id="f-email">
+        <label>Email <span style="color:var(--text3);font-weight:400;text-transform:none;letter-spacing:0">(ပြန် login ဝင်ဖို့ သုံးမည်)</span></label>
+        <input type="email" id="i-email" placeholder="yourname@gmail.com">
+        <div class="field-error">Email လိုအပ်သည်</div>
+      </div>
       <div class="field-row">
         <div class="field" id="f-name">
           <label>Full Name</label>
@@ -373,6 +378,28 @@ h1.hero-title .grad{background:linear-gradient(100deg,#a78bfa 10%,#f97316 55%,#f
     <p>Your application is in the queue. Admin reviews within 24 hours.</p>
     <div class="card status-card" id="pending-card"></div>
     <button class="btn btn-ghost" onclick="goTo('s-landing')" style="width:100%">← Back to Home</button>
+  </div>
+</div>
+
+<!-- ══ LOGIN ══════════════════════════════════════════════════ -->
+
+<div class="screen" id="s-login">
+  <div class="form-wrap">
+    <div class="form-back" onclick="goTo('s-landing')">← Back</div>
+    <div class="form-header">
+      <h2>🔑 Member Login</h2>
+      <p>Email ဖြင့် ပြန်ဝင်ပါ — approved members only.</p>
+    </div>
+    <div class="card form-card">
+      <div class="field">
+        <label>Email Address</label>
+        <input type="email" id="login-email" placeholder="yourname@gmail.com" onkeydown="if(event.key==='Enter')loginUser()">
+      </div>
+      <button class="form-submit" id="login-btn" onclick="loginUser()">Login →</button>
+      <div style="text-align:center;margin-top:16px;color:var(--text3);font-size:.85rem">
+        Account မရှိသေးဘူးဆိုရင် <span style="color:var(--accent);cursor:pointer" onclick="goTo('s-register')">Apply to Join →</span>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -497,6 +524,7 @@ document.addEventListener('firebase-ready', async () => {
   db = window._db;
   FB = window._fb;
   await loadStats();
+  await autoLogin();
 });
 
 /* ═══════════════════════════════════════════════════════════
@@ -584,15 +612,21 @@ async function submitForm() {
   btn.disabled = true;
   btn.innerHTML = '<div class="loader"></div> Submitting…';
 
+  const email = document.getElementById('i-email').value.trim().toLowerCase();
+  const err2 = (id, bad) => { document.getElementById(id).classList.toggle('has-error',bad); if(bad)valid=false; };
+  err2('f-email', !email || !email.includes('@'));
+  if (!valid) { toast('Please fill in all fields','error'); return; }
+
   try {
     const docRef = await FB.addDoc(FB.collection(db,'users'), {
-      name, age, job, vision,
+      name, age, job, vision, email,
       hobbies: selectedHobbies,
       color: randColor(),
       status: 'pending',
       createdAt: FB.serverTimestamp()
     });
     pendingDocId = docRef.id;
+    localStorage.setItem('vbc-email', email);
     document.getElementById('form-card').style.display = 'none';
     document.getElementById('form-success').style.display = 'block';
     toast('Application submitted! 🎉','success');
@@ -835,6 +869,62 @@ function toggleMembersView() {
   document.getElementById('chat-view').style.display = showMembers?'none':'flex';
   document.getElementById('members-view').style.display = showMembers?'flex':'none';
   document.getElementById('view-members-btn').classList.toggle('active',showMembers);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   LOGIN
+═══════════════════════════════════════════════════════════ */
+async function loginUser() {
+  const email = document.getElementById('login-email').value.trim().toLowerCase();
+  if (!email || !email.includes('@')) { toast('Email ထည့်ပါ','error'); return; }
+
+  const btn = document.getElementById('login-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="loader" style="margin:auto"></div>';
+
+  try {
+    const snap = await FB.getDocs(FB.query(FB.collection(db,'users'), FB.where('email','==',email)));
+    if (snap.empty) {
+      toast('Email မတွေ့ပါ — Apply ဦးလုပ်ပါ','error');
+    } else {
+      let user;
+      snap.forEach(d => user = {id:d.id,...d.data()});
+      if (user.status === 'approved') {
+        localStorage.setItem('vbc-email', email);
+        currentUser = user;
+        renderCommunity();
+        goTo('s-community');
+        toast(`ကြိုဆိုပါတယ် ${user.name}! 🎉`,'success');
+      } else if (user.status === 'pending') {
+        pendingDocId = user.id;
+        renderPending(user);
+        goTo('s-pending');
+        toast('Application သေးမပြီ — စောင့်ဆိုင်းပါ ⏳');
+      } else {
+        toast('Application ပယ်ချခံရပြီး ❌','error');
+      }
+    }
+  } catch(e) { toast('Error — ထပ်စမ်းပါ','error'); console.error(e); }
+
+  btn.disabled = false;
+  btn.textContent = 'Login →';
+}
+
+async function autoLogin() {
+  const email = localStorage.getItem('vbc-email');
+  if (!email || !db) return;
+  try {
+    const snap = await FB.getDocs(FB.query(FB.collection(db,'users'), FB.where('email','==',email)));
+    if (!snap.empty) {
+      let user;
+      snap.forEach(d => user = {id:d.id,...d.data()});
+      if (user.status === 'approved') {
+        currentUser = user;
+        renderCommunity();
+        goTo('s-community');
+      }
+    }
+  } catch(e) { localStorage.removeItem('vbc-email'); }
 }
 
 /* ═══════════════════════════════════════════════════════════
